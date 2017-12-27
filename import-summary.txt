@@ -7,6 +7,9 @@ The following files were *not* copied into the new Gradle project; you
 should evaluate whether these are still needed in your project and if
 so manually move them:
 
+* .gitignore
+* ant.properties
+* build.xml
 * pom.xml
 * proguard.cfg
 
@@ -17,6 +20,7 @@ Eclipse projects. Here's how the projects were restructured:
 
 * AndroidManifest.xml => android\src\main\AndroidManifest.xml
 * assets\ => android\src\main\assets\
+* proguard-android-optimize.txt => android\proguard-android-optimize.txt
 * res\ => android\src\main\res\
 * src\ => android\src\main\java\
 
