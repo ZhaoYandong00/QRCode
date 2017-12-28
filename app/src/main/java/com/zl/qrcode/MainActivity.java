@@ -8,6 +8,7 @@ import android.support.annotation.NonNull;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -42,16 +43,14 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-
         if (resultCode == RESULT_OK) {
             Bundle bundle = data.getExtras();
             if (bundle != null) {
                 String result = bundle.getString("result");
-
                 mTvResult.setText(result);
             }
         }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     /**
