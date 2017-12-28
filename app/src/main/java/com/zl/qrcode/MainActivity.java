@@ -1,7 +1,6 @@
 package com.zl.qrcode;
 
 import android.Manifest;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.net.Uri;
 import android.provider.Settings;
@@ -27,7 +26,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView mTvResult;
 
     @Override
-    protected void onCreate (Bundle savedInstanceState) {
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         mTvResult = findViewById(R.id.tv_result);
@@ -36,13 +35,13 @@ public class MainActivity extends AppCompatActivity {
     /**
      * 二维码
      */
-    public void QR (View view) {
+    public void QR(View view) {
         Intent intent = new Intent(MainActivity.this, CaptureActivity.class);
         startActivityForResult(intent, 1);
     }
 
     @Override
-    protected void onActivityResult (int requestCode, int resultCode, Intent data) {
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
         if (resultCode == RESULT_OK) {
@@ -59,7 +58,7 @@ public class MainActivity extends AppCompatActivity {
      * 得到权限
      */
     @NeedsPermission({Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE})
-    void getStorageAndCamera () {
+    void getStorageAndCamera() {
 
     }
 
@@ -71,8 +70,8 @@ public class MainActivity extends AppCompatActivity {
      * @param grantResults 结果数组
      */
     @Override
-    public void onRequestPermissionsResult (int requestCode, @NonNull String[] permissions,
-                                            @NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         MainActivityPermissionsDispatcher
                 .onRequestPermissionsResult(this, requestCode, grantResults);
@@ -84,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
      * @param request 请求
      */
     @OnShowRationale({Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE})
-    void getStorageAndCameraOnShow (final PermissionRequest request) {
+    void getStorageAndCameraOnShow(final PermissionRequest request) {
         showRationaleDialog(request);
     }
 
@@ -92,7 +91,7 @@ public class MainActivity extends AppCompatActivity {
      * 请求拒绝
      */
     @OnPermissionDenied({Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE})
-    void getStorageAndCameraDenied () {
+    void getStorageAndCameraDenied() {
         Toast.makeText(this, "你拒绝了该权限", Toast.LENGTH_SHORT).show();
     }
 
@@ -100,7 +99,7 @@ public class MainActivity extends AppCompatActivity {
      * 不再提醒
      */
     @OnNeverAskAgain({Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE})
-    void getStorageAndCameraNever () {
+    void getStorageAndCameraNever() {
         AskForPermission();
     }
 
@@ -110,7 +109,7 @@ public class MainActivity extends AppCompatActivity {
      *
      * @param request 请求
      */
-    private void showRationaleDialog (final PermissionRequest request) {
+    private void showRationaleDialog(final PermissionRequest request) {
         new AlertDialog.Builder(this).setPositiveButton("确定", (dialog, which) -> {
             request.proceed();//请求权限
         }).setTitle("请求权限").setCancelable(false).setMessage("我,存储，摄像头，开启授权").show();
@@ -119,15 +118,15 @@ public class MainActivity extends AppCompatActivity {
     /**
      * 被拒绝并且不再提醒,提示用户去设置界面重新打开权限
      */
-    private void AskForPermission () {
+    private void AskForPermission() {
         new AlertDialog.Builder(this).setTitle("缺少基础存储权限")
                 .setMessage("当前应用缺少存储权限,请去设置界面授权.\n授权之后按两次返回键可回到该应用哦").setNegativeButton("取消",
-                                                                                         (dialog, which) -> Toast
-                                                                                                 .makeText(
-                                                                                                         getApplicationContext(),
-                                                                                                         "你拒绝了该权限",
-                                                                                                         Toast.LENGTH_SHORT)
-                                                                                                 .show())
+                (dialog, which) -> Toast
+                        .makeText(
+                                getApplicationContext(),
+                                "你拒绝了该权限",
+                                Toast.LENGTH_SHORT)
+                        .show())
                 .setNeutralButton("不在提醒", (dialogInterface, i) -> Toast
                         .makeText(getApplicationContext(), "不再提供权限", Toast.LENGTH_SHORT).show())
                 .setPositiveButton("设置", (dialog, which) -> {
