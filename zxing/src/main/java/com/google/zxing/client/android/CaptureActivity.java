@@ -353,13 +353,13 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
         }
         return super.onKeyDown(keyCode, event);
     }
-
-    @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        MenuInflater menuInflater = getMenuInflater();
-        menuInflater.inflate(R.menu.capture, menu);
-        return super.onCreateOptionsMenu(menu);
-    }
+    //  取消上边设置行，只保留扫描功能
+    //    @Override
+    //    public boolean onCreateOptionsMenu(Menu menu) {
+    //        MenuInflater menuInflater = getMenuInflater();
+    //        menuInflater.inflate(R.menu.capture, menu);
+    //        return super.onCreateOptionsMenu(menu);
+    //    }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
@@ -454,6 +454,12 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
             // Then not from history, so beep/vibrate and we have an image to draw on
             beepManager.playBeepSoundAndVibrate();
             drawResultPoints(barcode, scaleFactor, rawResult);
+
+            //ZYD 返回到主界面2017.12.28
+            Intent result = getIntent();
+            result.putExtra("result", rawResult.getText());
+            setResult(RESULT_OK, result);
+            finish();
         }
 
         switch (source) {
