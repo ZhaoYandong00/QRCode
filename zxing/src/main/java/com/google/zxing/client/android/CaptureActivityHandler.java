@@ -88,8 +88,7 @@ public final class CaptureActivityHandler extends Handler {
       if (bundle != null) {
         byte[] compressedBitmap = bundle.getByteArray(DecodeThread.BARCODE_BITMAP);
         if (compressedBitmap != null) {
-          barcode = BitmapFactory
-                  .decodeByteArray(compressedBitmap, 0, compressedBitmap.length, null);
+          barcode = BitmapFactory.decodeByteArray(compressedBitmap, 0, compressedBitmap.length, null);
           // Mutable copy:
           barcode = barcode.copy(Bitmap.Config.ARGB_8888, true);
         }
@@ -97,8 +96,7 @@ public final class CaptureActivityHandler extends Handler {
       }
       activity.handleDecode((Result) message.obj, barcode, scaleFactor);
 
-    } else if (message.what
-            == R.id.decode_failed) {// We're decoding as fast as possible, so when one decode fails, start another.
+    } else if (message.what == R.id.decode_failed) {// We're decoding as fast as possible, so when one decode fails, start another.
       state = State.PREVIEW;
       cameraManager.requestPreviewFrame(decodeThread.getHandler(), R.id.decode);
 
@@ -110,11 +108,11 @@ public final class CaptureActivityHandler extends Handler {
       String url = (String) message.obj;
 
       Intent intent = new Intent(Intent.ACTION_VIEW);
-      intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET);
+      intent.addFlags(Intents.FLAG_NEW_DOC);
       intent.setData(Uri.parse(url));
 
-      ResolveInfo resolveInfo = activity.getPackageManager()
-              .resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
+      ResolveInfo resolveInfo =
+              activity.getPackageManager().resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
       String browserPackageName = null;
       if (resolveInfo != null && resolveInfo.activityInfo != null) {
         browserPackageName = resolveInfo.activityInfo.packageName;
@@ -122,11 +120,15 @@ public final class CaptureActivityHandler extends Handler {
       }
 
       // Needed for default Android browser / Chrome only apparently
-      if ("com.android.browser".equals(browserPackageName) || "com.android.chrome"
-              .equals(browserPackageName)) {
-        intent.setPackage(browserPackageName);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        intent.putExtra(Browser.EXTRA_APPLICATION_ID, browserPackageName);
+      if (browserPackageName != null) {
+        switch (browserPackageName) {
+          case "com.android.browser":
+          case "com.android.chrome":
+            intent.setPackage(browserPackageName);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.putExtra(Browser.EXTRA_APPLICATION_ID, browserPackageName);
+            break;
+        }
       }
 
       try {

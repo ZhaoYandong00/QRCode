@@ -2,6 +2,8 @@ package com.zl.qrcode;
 
 import android.Manifest;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
 import android.net.Uri;
 import android.provider.Settings;
 import android.support.annotation.NonNull;
@@ -37,7 +39,7 @@ public class MainActivity extends AppCompatActivity {
      */
     public void QR(View view) {
         Intent intent = new Intent(MainActivity.this, CaptureActivity.class);
-        startActivityForResult(intent, 1);
+        startActivityForResult(intent, 0);
     }
 
     @Override

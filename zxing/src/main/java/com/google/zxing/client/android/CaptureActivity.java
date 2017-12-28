@@ -16,6 +16,22 @@
 
 package com.google.zxing.client.android;
 
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.DecodeHintType;
+import com.google.zxing.Result;
+import com.google.zxing.ResultMetadataType;
+import com.google.zxing.ResultPoint;
+import com.google.zxing.client.android.camera.CameraManager;
+import com.google.zxing.client.android.clipboard.ClipboardInterface;
+import com.google.zxing.client.android.history.HistoryActivity;
+import com.google.zxing.client.android.history.HistoryItem;
+import com.google.zxing.client.android.history.HistoryManager;
+import com.google.zxing.client.android.result.ResultButtonListener;
+import com.google.zxing.client.android.result.ResultHandler;
+import com.google.zxing.client.android.result.ResultHandlerFactory;
+import com.google.zxing.client.android.result.supplement.SupplementalInfoRetriever;
+import com.google.zxing.client.android.share.ShareActivity;
+
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
@@ -34,6 +50,10 @@ import android.preference.PreferenceManager;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.KeyEvent;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -44,21 +64,9 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import com.google.zxing.BarcodeFormat;
-import com.google.zxing.DecodeHintType;
-import com.google.zxing.Result;
-import com.google.zxing.ResultMetadataType;
-import com.google.zxing.ResultPoint;
-import com.google.zxing.client.android.camera.CameraManager;
-import com.google.zxing.client.android.clipboard.ClipboardInterface;
-import com.google.zxing.client.android.result.ResultButtonListener;
-import com.google.zxing.client.android.result.ResultHandler;
-import com.google.zxing.client.android.result.ResultHandlerFactory;
-
 import java.io.IOException;
 import java.text.DateFormat;
 import java.util.Collection;
-import java.util.Date;
 import java.util.EnumSet;
 import java.util.Map;
 
@@ -79,7 +87,7 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
 
     private static final String[] ZXING_URLS = {"http://zxing.appspot.com/scan", "zxing://scan/"};
 
-    public static final int HISTORY_REQUEST_CODE = 0x0000bacc;
+    private static final int HISTORY_REQUEST_CODE = 0x0000bacc;
 
     private static final Collection<ResultMetadataType> DISPLAYABLE_METADATA_TYPES =
             EnumSet.of(ResultMetadataType.ISSUE_NUMBER,
@@ -89,6 +97,7 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
 
     private CameraManager cameraManager;
     private CaptureActivityHandler handler;
+    private Result savedResultToShow;
     private ViewfinderView viewfinderView;
     private TextView statusView;
     private View resultView;
@@ -101,6 +110,7 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
     private Collection<BarcodeFormat> decodeFormats;
     private Map<DecodeHintType, ?> decodeHints;
     private String characterSet;
+    private HistoryManager historyManager;
     private InactivityTimer inactivityTimer;
     private BeepManager beepManager;
     private AmbientLightManager ambientLightManager;
@@ -131,18 +141,22 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
         ambientLightManager = new AmbientLightManager(this);
 
         PreferenceManager.setDefaultValues(this, R.xml.preferences, false);
-        //判断是否是竖屏
+        //竖屏 ZYD 2017年12月28日
         if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
         } else {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
         }
+
     }
 
     @Override
     protected void onResume() {
         super.onResume();
 
+        // historyManager must be initialized here to update the history preference
+        historyManager = new HistoryManager(this);
+        historyManager.trimHistory();
 
         // CameraManager must be initialized here, not in onCreate(). This is necessary because we don't
         // want to open the camera driver and measure the screen size if we're going to show the help on
@@ -150,27 +164,25 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
         // off screen.
         cameraManager = new CameraManager(getApplication());
 
-        viewfinderView = (ViewfinderView) findViewById(R.id.viewfinder_view);
+        viewfinderView = findViewById(R.id.viewfinder_view);
         viewfinderView.setCameraManager(cameraManager);
 
         resultView = findViewById(R.id.result_view);
-        statusView = (TextView) findViewById(R.id.status_view);
+        statusView = findViewById(R.id.status_view);
 
         handler = null;
         lastResult = null;
 
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        //竖屏   ZYD 2017.12.28
+        //        if (prefs.getBoolean(PreferencesActivity.KEY_DISABLE_AUTO_ORIENTATION, true)) {
+        //            setRequestedOrientation(getCurrentOrientation());
+        //        } else {
+        //            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        //        }
+
         resetStatusView();
 
-        SurfaceView surfaceView = (SurfaceView) findViewById(R.id.preview_view);
-        SurfaceHolder surfaceHolder = surfaceView.getHolder();
-        if (hasSurface) {
-            // The activity was paused but not stopped, so the surface still exists. Therefore
-            // surfaceCreated() won't be called, so init the camera here.
-            initCamera(surfaceHolder);
-        } else {
-            // Install the callback and wait for surfaceCreated() to init the camera.
-            surfaceHolder.addCallback(this);
-        }
 
         beepManager.updatePrefs();
         ambientLightManager.start(cameraManager);
@@ -179,11 +191,12 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
 
         Intent intent = getIntent();
 
-        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
         copyToClipboard = prefs.getBoolean(PreferencesActivity.KEY_COPY_TO_CLIPBOARD, true)
                 && (intent == null || intent.getBooleanExtra(Intents.Scan.SAVE_HISTORY, true));
 
         source = IntentSource.NONE;
+        sourceUrl = null;
+        scanFromWebPageManager = null;
         decodeFormats = null;
         characterSet = null;
 
@@ -204,6 +217,13 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
                     int height = intent.getIntExtra(Intents.Scan.HEIGHT, 0);
                     if (width > 0 && height > 0) {
                         cameraManager.setManualFramingRect(width, height);
+                    }
+                }
+
+                if (intent.hasExtra(Intents.Scan.CAMERA_ID)) {
+                    int cameraId = intent.getIntExtra(Intents.Scan.CAMERA_ID, -1);
+                    if (cameraId >= 0) {
+                        cameraManager.setManualCameraId(cameraId);
                     }
                 }
 
@@ -238,6 +258,34 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
             characterSet = intent.getStringExtra(Intents.Scan.CHARACTER_SET);
 
         }
+
+        SurfaceView surfaceView = findViewById(R.id.preview_view);
+        SurfaceHolder surfaceHolder = surfaceView.getHolder();
+        if (hasSurface) {
+            // The activity was paused but not stopped, so the surface still exists. Therefore
+            // surfaceCreated() won't be called, so init the camera here.
+            initCamera(surfaceHolder);
+        } else {
+            // Install the callback and wait for surfaceCreated() to init the camera.
+            surfaceHolder.addCallback(this);
+        }
+    }
+
+    private int getCurrentOrientation() {
+        int rotation = getWindowManager().getDefaultDisplay().getRotation();
+        if (getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            if (rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_90) {
+                return ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
+            } else {
+                return ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
+            }
+        } else {
+            if (rotation == Surface.ROTATION_0 || rotation == Surface.ROTATION_270) {
+                return ActivityInfo.SCREEN_ORIENTATION_PORTRAIT;
+            } else {
+                return ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT;
+            }
+        }
     }
 
     private static boolean isZXingURL(String dataString) {
@@ -260,9 +308,11 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
         }
         inactivityTimer.onPause();
         ambientLightManager.stop();
+        beepManager.close();
         cameraManager.closeDriver();
+        //historyManager = null; // Keep for onActivityResult
         if (!hasSurface) {
-            SurfaceView surfaceView = (SurfaceView) findViewById(R.id.preview_view);
+            SurfaceView surfaceView = findViewById(R.id.preview_view);
             SurfaceHolder surfaceHolder = surfaceView.getHolder();
             surfaceHolder.removeCallback(this);
         }
@@ -304,16 +354,64 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
         return super.onKeyDown(keyCode, event);
     }
 
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuInflater menuInflater = getMenuInflater();
+        menuInflater.inflate(R.menu.capture, menu);
+        return super.onCreateOptionsMenu(menu);
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.addFlags(Intents.FLAG_NEW_DOC);
+        int i = item.getItemId();
+        if (i == R.id.menu_share) {
+            intent.setClassName(this, ShareActivity.class.getName());
+            startActivity(intent);
+
+        } else if (i == R.id.menu_history) {
+            intent.setClassName(this, HistoryActivity.class.getName());
+            startActivityForResult(intent, HISTORY_REQUEST_CODE);
+
+        } else if (i == R.id.menu_settings) {
+            intent.setClassName(this, PreferencesActivity.class.getName());
+            startActivity(intent);
+
+        } else if (i == R.id.menu_help) {
+            intent.setClassName(this, HelpActivity.class.getName());
+            startActivity(intent);
+
+        } else {
+            return super.onOptionsItemSelected(item);
+        }
+        return true;
+    }
 
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent intent) {
-        if (resultCode == RESULT_OK) {
-            if (requestCode == HISTORY_REQUEST_CODE) {
-                int itemNumber = intent.getIntExtra(Intents.History.ITEM_NUMBER, -1);
-                if (itemNumber >= 0) {
-
-                }
+        if (resultCode == RESULT_OK && requestCode == HISTORY_REQUEST_CODE && historyManager != null) {
+            int itemNumber = intent.getIntExtra(Intents.History.ITEM_NUMBER, -1);
+            if (itemNumber >= 0) {
+                HistoryItem historyItem = historyManager.buildHistoryItem(itemNumber);
+                decodeOrStoreSavedBitmap(null, historyItem.getResult());
             }
+        }
+    }
+
+    private void decodeOrStoreSavedBitmap(Bitmap bitmap, Result result) {
+        // Bitmap isn't used yet -- will be used soon
+        if (handler == null) {
+            savedResultToShow = result;
+        } else {
+            if (result != null) {
+                savedResultToShow = result;
+            }
+            if (savedResultToShow != null) {
+                Message message = Message.obtain(handler, R.id.decode_succeeded, savedResultToShow);
+                handler.sendMessage(message);
+            }
+            savedResultToShow = null;
         }
     }
 
@@ -335,7 +433,7 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-
+        // do nothing
     }
 
     /**
@@ -352,6 +450,7 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
 
         boolean fromLiveScan = barcode != null;
         if (fromLiveScan) {
+            historyManager.addHistoryItem(rawResult, resultHandler);
             // Then not from history, so beep/vibrate and we have an image to draw on
             beepManager.playBeepSoundAndVibrate();
             drawResultPoints(barcode, scaleFactor, rawResult);
@@ -375,6 +474,7 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
                     Toast.makeText(getApplicationContext(),
                             getResources().getString(R.string.msg_bulk_mode_scanned) + " (" + rawResult.getText() + ')',
                             Toast.LENGTH_SHORT).show();
+                    maybeSetClipboard(resultHandler);
                     // Wait a moment or else it will scan the same barcode continuously about 3 times
                     restartPreviewAfterDelay(BULK_MODE_SCAN_DELAY_MS);
                 } else {
@@ -429,11 +529,21 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
 
     // Put up our own UI for how to handle the decoded contents.
     private void handleDecodeInternally(Result rawResult, ResultHandler resultHandler, Bitmap barcode) {
+
+        maybeSetClipboard(resultHandler);
+
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+
+        if (resultHandler.getDefaultButtonID() != null && prefs.getBoolean(PreferencesActivity.KEY_AUTO_OPEN_WEB, false)) {
+            resultHandler.handleButtonPress(resultHandler.getDefaultButtonID());
+            return;
+        }
+
         statusView.setVisibility(View.GONE);
         viewfinderView.setVisibility(View.GONE);
         resultView.setVisibility(View.VISIBLE);
 
-        ImageView barcodeImageView = (ImageView) findViewById(R.id.barcode_image_view);
+        ImageView barcodeImageView = findViewById(R.id.barcode_image_view);
         if (barcode == null) {
             barcodeImageView.setImageBitmap(BitmapFactory.decodeResource(getResources(),
                     R.drawable.launcher_icon));
@@ -441,18 +551,18 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
             barcodeImageView.setImageBitmap(barcode);
         }
 
-        TextView formatTextView = (TextView) findViewById(R.id.format_text_view);
+        TextView formatTextView = findViewById(R.id.format_text_view);
         formatTextView.setText(rawResult.getBarcodeFormat().toString());
 
-        TextView typeTextView = (TextView) findViewById(R.id.type_text_view);
+        TextView typeTextView = findViewById(R.id.type_text_view);
         typeTextView.setText(resultHandler.getType().toString());
 
         DateFormat formatter = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT);
-        TextView timeTextView = (TextView) findViewById(R.id.time_text_view);
-        timeTextView.setText(formatter.format(new Date(rawResult.getTimestamp())));
+        TextView timeTextView = findViewById(R.id.time_text_view);
+        timeTextView.setText(formatter.format(rawResult.getTimestamp()));
 
 
-        TextView metaTextView = (TextView) findViewById(R.id.meta_text_view);
+        TextView metaTextView = findViewById(R.id.meta_text_view);
         View metaTextViewLabel = findViewById(R.id.meta_text_view_label);
         metaTextView.setVisibility(View.GONE);
         metaTextViewLabel.setVisibility(View.GONE);
@@ -472,23 +582,25 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
             }
         }
 
-        TextView contentsTextView = (TextView) findViewById(R.id.contents_text_view);
         CharSequence displayContents = resultHandler.getDisplayContents();
+        TextView contentsTextView = findViewById(R.id.contents_text_view);
         contentsTextView.setText(displayContents);
-        // Crudely scale betweeen 22 and 32 -- bigger font for shorter text
         int scaledSize = Math.max(22, 32 - displayContents.length() / 4);
         contentsTextView.setTextSize(TypedValue.COMPLEX_UNIT_SP, scaledSize);
 
-        TextView supplementTextView = (TextView) findViewById(R.id.contents_supplement_text_view);
+        TextView supplementTextView = findViewById(R.id.contents_supplement_text_view);
         supplementTextView.setText("");
         supplementTextView.setOnClickListener(null);
         if (PreferenceManager.getDefaultSharedPreferences(this).getBoolean(
                 PreferencesActivity.KEY_SUPPLEMENTAL, true)) {
-
+            SupplementalInfoRetriever.maybeInvokeRetrieval(supplementTextView,
+                    resultHandler.getResult(),
+                    historyManager,
+                    this);
         }
 
         int buttonCount = resultHandler.getButtonCount();
-        ViewGroup buttonView = (ViewGroup) findViewById(R.id.result_button_view);
+        ViewGroup buttonView = findViewById(R.id.result_button_view);
         buttonView.requestFocus();
         for (int x = 0; x < ResultHandler.MAX_BUTTON_COUNT; x++) {
             TextView button = (TextView) buttonView.getChildAt(x);
@@ -501,9 +613,6 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
             }
         }
 
-        if (copyToClipboard && !resultHandler.areContentsSecure()) {
-            ClipboardInterface.setText(displayContents, this);
-        }
     }
 
     // Briefly show the contents of the barcode, then handle the result outside Barcode Scanner.
@@ -529,64 +638,69 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
             statusView.setText(getString(resultHandler.getDisplayTitle()) + " : " + rawResultString);
         }
 
-        if (copyToClipboard && !resultHandler.areContentsSecure()) {
-            CharSequence text = resultHandler.getDisplayContents();
-            ClipboardInterface.setText(text, this);
-        }
+        maybeSetClipboard(resultHandler);
 
-        if (source == IntentSource.NATIVE_APP_INTENT) {
-
-            // Hand back whatever action they requested - this can be changed to Intents.Scan.ACTION when
-            // the deprecated intent is retired.
-            Intent intent = new Intent(getIntent().getAction());
-            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET);
-            intent.putExtra(Intents.Scan.RESULT, rawResult.toString());
-            intent.putExtra(Intents.Scan.RESULT_FORMAT, rawResult.getBarcodeFormat().toString());
-            byte[] rawBytes = rawResult.getRawBytes();
-            if (rawBytes != null && rawBytes.length > 0) {
-                intent.putExtra(Intents.Scan.RESULT_BYTES, rawBytes);
-            }
-            Map<ResultMetadataType, ?> metadata = rawResult.getResultMetadata();
-            if (metadata != null) {
-                if (metadata.containsKey(ResultMetadataType.UPC_EAN_EXTENSION)) {
-                    intent.putExtra(Intents.Scan.RESULT_UPC_EAN_EXTENSION,
-                            metadata.get(ResultMetadataType.UPC_EAN_EXTENSION).toString());
+        switch (source) {
+            case NATIVE_APP_INTENT:
+                // Hand back whatever action they requested - this can be changed to Intents.Scan.ACTION when
+                // the deprecated intent is retired.
+                Intent intent = new Intent(getIntent().getAction());
+                intent.addFlags(Intents.FLAG_NEW_DOC);
+                intent.putExtra(Intents.Scan.RESULT, rawResult.toString());
+                intent.putExtra(Intents.Scan.RESULT_FORMAT, rawResult.getBarcodeFormat().toString());
+                byte[] rawBytes = rawResult.getRawBytes();
+                if (rawBytes != null && rawBytes.length > 0) {
+                    intent.putExtra(Intents.Scan.RESULT_BYTES, rawBytes);
                 }
-                Number orientation = (Number) metadata.get(ResultMetadataType.ORIENTATION);
-                if (orientation != null) {
-                    intent.putExtra(Intents.Scan.RESULT_ORIENTATION, orientation.intValue());
-                }
-                String ecLevel = (String) metadata.get(ResultMetadataType.ERROR_CORRECTION_LEVEL);
-                if (ecLevel != null) {
-                    intent.putExtra(Intents.Scan.RESULT_ERROR_CORRECTION_LEVEL, ecLevel);
-                }
-                @SuppressWarnings("unchecked")
-                Iterable<byte[]> byteSegments = (Iterable<byte[]>) metadata.get(ResultMetadataType.BYTE_SEGMENTS);
-                if (byteSegments != null) {
-                    int i = 0;
-                    for (byte[] byteSegment : byteSegments) {
-                        intent.putExtra(Intents.Scan.RESULT_BYTE_SEGMENTS_PREFIX + i, byteSegment);
-                        i++;
+                Map<ResultMetadataType, ?> metadata = rawResult.getResultMetadata();
+                if (metadata != null) {
+                    if (metadata.containsKey(ResultMetadataType.UPC_EAN_EXTENSION)) {
+                        intent.putExtra(Intents.Scan.RESULT_UPC_EAN_EXTENSION,
+                                metadata.get(ResultMetadataType.UPC_EAN_EXTENSION).toString());
+                    }
+                    Number orientation = (Number) metadata.get(ResultMetadataType.ORIENTATION);
+                    if (orientation != null) {
+                        intent.putExtra(Intents.Scan.RESULT_ORIENTATION, orientation.intValue());
+                    }
+                    String ecLevel = (String) metadata.get(ResultMetadataType.ERROR_CORRECTION_LEVEL);
+                    if (ecLevel != null) {
+                        intent.putExtra(Intents.Scan.RESULT_ERROR_CORRECTION_LEVEL, ecLevel);
+                    }
+                    @SuppressWarnings("unchecked")
+                    Iterable<byte[]> byteSegments = (Iterable<byte[]>) metadata.get(ResultMetadataType.BYTE_SEGMENTS);
+                    if (byteSegments != null) {
+                        int i = 0;
+                        for (byte[] byteSegment : byteSegments) {
+                            intent.putExtra(Intents.Scan.RESULT_BYTE_SEGMENTS_PREFIX + i, byteSegment);
+                            i++;
+                        }
                     }
                 }
-            }
-            sendReplyMessage(R.id.return_scan_result, intent, resultDurationMS);
+                sendReplyMessage(R.id.return_scan_result, intent, resultDurationMS);
+                break;
 
-        } else if (source == IntentSource.PRODUCT_SEARCH_LINK) {
+            case PRODUCT_SEARCH_LINK:
+                // Reformulate the URL which triggered us into a query, so that the request goes to the same
+                // TLD as the scan URL.
+                int end = sourceUrl.lastIndexOf("/scan");
+                String productReplyURL = sourceUrl.substring(0, end) + "?q=" +
+                        resultHandler.getDisplayContents() + "&source=zxing";
+                sendReplyMessage(R.id.launch_product_query, productReplyURL, resultDurationMS);
+                break;
 
-            // Reformulate the URL which triggered us into a query, so that the request goes to the same
-            // TLD as the scan URL.
-            int end = sourceUrl.lastIndexOf("/scan");
-            String replyURL = sourceUrl.substring(0, end) + "?q=" + resultHandler.getDisplayContents() + "&source=zxing";
-            sendReplyMessage(R.id.launch_product_query, replyURL, resultDurationMS);
+            case ZXING_LINK:
+                if (scanFromWebPageManager != null && scanFromWebPageManager.isScanFromWebPage()) {
+                    String linkReplyURL = scanFromWebPageManager.buildReplyURL(rawResult, resultHandler);
+                    scanFromWebPageManager = null;
+                    sendReplyMessage(R.id.launch_product_query, linkReplyURL, resultDurationMS);
+                }
+                break;
+        }
+    }
 
-        } else if (source == IntentSource.ZXING_LINK) {
-
-            if (scanFromWebPageManager != null && scanFromWebPageManager.isScanFromWebPage()) {
-                String replyURL = scanFromWebPageManager.buildReplyURL(rawResult, resultHandler);
-                sendReplyMessage(R.id.launch_product_query, replyURL, resultDurationMS);
-            }
-
+    private void maybeSetClipboard(ResultHandler resultHandler) {
+        if (copyToClipboard && !resultHandler.areContentsSecure()) {
+            ClipboardInterface.setText(resultHandler.getDisplayContents(), this);
         }
     }
 
@@ -615,6 +729,7 @@ public final class CaptureActivity extends Activity implements SurfaceHolder.Cal
             if (handler == null) {
                 handler = new CaptureActivityHandler(this, decodeFormats, decodeHints, characterSet, cameraManager);
             }
+            decodeOrStoreSavedBitmap(null, null);
         } catch (IOException ioe) {
             Log.w(TAG, ioe);
             displayFrameworkBugMessageAndExit();

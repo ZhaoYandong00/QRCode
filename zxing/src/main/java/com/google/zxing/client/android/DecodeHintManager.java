@@ -55,7 +55,7 @@ final class DecodeHintManager {
    * @return name-value pairs
    */
   private static Map<String,String> splitQuery(String query) {
-    Map<String,String> map = new HashMap<String,String>();
+    Map<String,String> map = new HashMap<>();
     int pos = 0;
     while (pos < query.length()) {
       if (query.charAt(pos) == '&') {
@@ -103,7 +103,7 @@ final class DecodeHintManager {
       String name = query.substring(pos, equ);
       name = name.replace('+', ' '); // Preemptively decode +
       name = Uri.decode(name);
-      String text = query.substring(equ+1, amp);
+      String text = query.substring(equ + 1, amp);
       text = text.replace('+', ' '); // Preemptively decode +
       text = Uri.decode(text);
       if (!map.containsKey(name)) {
@@ -140,7 +140,6 @@ final class DecodeHintManager {
       }
       if (hintType.getValueType().equals(Object.class)) {
         // This is an unspecified type of hint content. Use the value as is.
-        // TODO: Can we make a different assumption on this?
         hints.put(hintType, parameterText);
         continue;
       }

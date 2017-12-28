@@ -26,12 +26,13 @@ import android.os.Vibrator;
 import android.preference.PreferenceManager;
 import android.util.Log;
 
+import java.io.Closeable;
 import java.io.IOException;
 
 /**
  * Manages beeps and vibrations for {@link CaptureActivity}.
  */
-final class BeepManager implements MediaPlayer.OnCompletionListener, MediaPlayer.OnErrorListener {
+final class BeepManager implements MediaPlayer.OnErrorListener, Closeable {
 
   private static final String TAG = BeepManager.class.getSimpleName();
 
@@ -85,27 +86,19 @@ final class BeepManager implements MediaPlayer.OnCompletionListener, MediaPlayer
 
   private MediaPlayer buildMediaPlayer(Context activity) {
     MediaPlayer mediaPlayer = new MediaPlayer();
-    mediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
-    mediaPlayer.setOnCompletionListener(this);
-    mediaPlayer.setOnErrorListener(this);
-
-    AssetFileDescriptor file = activity.getResources().openRawResourceFd(R.raw.beep);
-    try {
+    try (AssetFileDescriptor file = activity.getResources().openRawResourceFd(R.raw.beep)) {
       mediaPlayer.setDataSource(file.getFileDescriptor(), file.getStartOffset(), file.getLength());
-      file.close();
+      mediaPlayer.setOnErrorListener(this);
+      mediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
+      mediaPlayer.setLooping(false);
       mediaPlayer.setVolume(BEEP_VOLUME, BEEP_VOLUME);
       mediaPlayer.prepare();
+      return mediaPlayer;
     } catch (IOException ioe) {
       Log.w(TAG, ioe);
-      mediaPlayer = null;
+      mediaPlayer.release();
+      return null;
     }
-    return mediaPlayer;
-  }
-
-  @Override
-  public void onCompletion(MediaPlayer mp) {
-    // When the beep has finished playing, rewind to queue up another one.      
-    mp.seekTo(0);
   }
 
   @Override
@@ -115,11 +108,18 @@ final class BeepManager implements MediaPlayer.OnCompletionListener, MediaPlayer
       activity.finish();
     } else {
       // possibly media player error, so release and recreate
-      mp.release();
-      mediaPlayer = null;
+      close();
       updatePrefs();
     }
     return true;
+  }
+
+  @Override
+  public synchronized void close() {
+    if (mediaPlayer != null) {
+      mediaPlayer.release();
+      mediaPlayer = null;
+    }
   }
 
 }

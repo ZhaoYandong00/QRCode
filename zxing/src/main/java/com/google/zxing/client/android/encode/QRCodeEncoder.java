@@ -35,7 +35,6 @@ import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.ContactsContract;
-import android.telephony.PhoneNumberUtils;
 import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
@@ -74,9 +73,9 @@ final class QRCodeEncoder {
     this.dimension = dimension;
     this.useVCard = useVCard;
     String action = intent.getAction();
-    if (action.equals(Intents.Encode.ACTION)) {
+    if (Intents.Encode.ACTION.equals(action)) {
       encodeContentsFromZXingIntent(intent);
-    } else if (action.equals(Intent.ACTION_SEND)) {
+    } else if (Intent.ACTION_SEND.equals(action)) {
       encodeContentsFromShareIntent(intent);
     }
   }
@@ -99,7 +98,7 @@ final class QRCodeEncoder {
 
   // It would be nice if the string encoding lived in the core ZXing library,
   // but we use platform specific code like PhoneNumberUtils, so it can't.
-  private boolean encodeContentsFromZXingIntent(Intent intent) {
+  private void encodeContentsFromZXingIntent(Intent intent) {
      // Default to QR_CODE if no format given.
     String formatString = intent.getStringExtra(Intents.Encode.FORMAT);
     format = null;
@@ -112,11 +111,10 @@ final class QRCodeEncoder {
     }
     if (format == null || format == BarcodeFormat.QR_CODE) {
       String type = intent.getStringExtra(Intents.Encode.TYPE);
-      if (type == null || type.isEmpty()) {
-        return false;
+      if (type != null && !type.isEmpty()) {
+        this.format = BarcodeFormat.QR_CODE;
+        encodeQRCodeContents(intent, type);
       }
-      this.format = BarcodeFormat.QR_CODE;
-      encodeQRCodeContents(intent, type);
     } else {
       String data = intent.getStringExtra(Intents.Encode.DATA);
       if (data != null && !data.isEmpty()) {
@@ -125,7 +123,6 @@ final class QRCodeEncoder {
         title = activity.getString(R.string.contents_text);
       }
     }
-    return contents != null && !contents.isEmpty();
   }
 
   // Handles send intents from multitude of Android applications
@@ -187,8 +184,10 @@ final class QRCodeEncoder {
     }
     byte[] vcard;
     String vcardString;
-    try {
-      InputStream stream = activity.getContentResolver().openInputStream(uri);
+    try (InputStream stream = activity.getContentResolver().openInputStream(uri)) {
+      if (stream == null) {
+        throw new WriterException("Can't open stream for " + uri);
+      }
       ByteArrayOutputStream baos = new ByteArrayOutputStream();
       byte[] buffer = new byte[2048];
       int bytesRead;
@@ -215,56 +214,55 @@ final class QRCodeEncoder {
 
   private void encodeQRCodeContents(Intent intent, String type) {
     switch (type) {
-      case Contents.Type.TEXT: {
-        String data = intent.getStringExtra(Intents.Encode.DATA);
-        if (data != null && !data.isEmpty()) {
-          contents = data;
-          displayContents = data;
+      case Contents.Type.TEXT:
+        String textData = intent.getStringExtra(Intents.Encode.DATA);
+        if (textData != null && !textData.isEmpty()) {
+          contents = textData;
+          displayContents = textData;
           title = activity.getString(R.string.contents_text);
         }
         break;
-      }
-      case Contents.Type.EMAIL: {
-        String data = ContactEncoder.trim(intent.getStringExtra(Intents.Encode.DATA));
-        if (data != null) {
-          contents = "mailto:" + data;
-          displayContents = data;
+
+      case Contents.Type.EMAIL:
+        String emailData = ContactEncoder.trim(intent.getStringExtra(Intents.Encode.DATA));
+        if (emailData != null) {
+          contents = "mailto:" + emailData;
+          displayContents = emailData;
           title = activity.getString(R.string.contents_email);
         }
         break;
-      }
-      case Contents.Type.PHONE: {
-        String data = ContactEncoder.trim(intent.getStringExtra(Intents.Encode.DATA));
-        if (data != null) {
-          contents = "tel:" + data;
-          displayContents = PhoneNumberUtils.formatNumber(data);
+
+      case Contents.Type.PHONE:
+        String phoneData = ContactEncoder.trim(intent.getStringExtra(Intents.Encode.DATA));
+        if (phoneData != null) {
+          contents = "tel:" + phoneData;
+          displayContents = ContactEncoder.formatPhone(phoneData);
           title = activity.getString(R.string.contents_phone);
         }
         break;
-      }
-      case Contents.Type.SMS: {
-        String data = ContactEncoder.trim(intent.getStringExtra(Intents.Encode.DATA));
-        if (data != null) {
-          contents = "sms:" + data;
-          displayContents = PhoneNumberUtils.formatNumber(data);
+
+      case Contents.Type.SMS:
+        String smsData = ContactEncoder.trim(intent.getStringExtra(Intents.Encode.DATA));
+        if (smsData != null) {
+          contents = "sms:" + smsData;
+          displayContents = ContactEncoder.formatPhone(smsData);
           title = activity.getString(R.string.contents_sms);
         }
         break;
-      }
-      case Contents.Type.CONTACT: {
 
-        Bundle bundle = intent.getBundleExtra(Intents.Encode.DATA);
-        if (bundle != null) {
+      case Contents.Type.CONTACT:
+        Bundle contactBundle = intent.getBundleExtra(Intents.Encode.DATA);
+        if (contactBundle != null) {
 
-          String name = bundle.getString(ContactsContract.Intents.Insert.NAME);
-          String organization = bundle.getString(ContactsContract.Intents.Insert.COMPANY);
-          String address = bundle.getString(ContactsContract.Intents.Insert.POSTAL);
-          List<String> phones = getAllBundleValues(bundle, Contents.PHONE_KEYS);
-          List<String> phoneTypes = getAllBundleValues(bundle, Contents.PHONE_TYPE_KEYS);
-          List<String> emails = getAllBundleValues(bundle, Contents.EMAIL_KEYS);
-          String url = bundle.getString(Contents.URL_KEY);
+          String name = contactBundle.getString(ContactsContract.Intents.Insert.NAME);
+          String organization = contactBundle.getString(ContactsContract.Intents.Insert.COMPANY);
+          String address = contactBundle.getString(ContactsContract.Intents.Insert.POSTAL);
+          List<String> phones = getAllBundleValues(contactBundle, Contents.PHONE_KEYS);
+          List<String> phoneTypes = getAllBundleValues(contactBundle, Contents.PHONE_TYPE_KEYS);
+          List<String> emails = getAllBundleValues(contactBundle, Contents.EMAIL_KEYS);
+          String url = contactBundle.getString(Contents.URL_KEY);
           List<String> urls = url == null ? null : Collections.singletonList(url);
-          String note = bundle.getString(Contents.NOTE_KEY);
+          String note = contactBundle.getString(Contents.NOTE_KEY);
 
           ContactEncoder encoder = useVCard ? new VCardContactEncoder() : new MECARDContactEncoder();
           String[] encoded = encoder.encode(Collections.singletonList(name),
@@ -283,15 +281,14 @@ final class QRCodeEncoder {
           }
 
         }
-
         break;
-      }
-      case Contents.Type.LOCATION: {
-        Bundle bundle = intent.getBundleExtra(Intents.Encode.DATA);
-        if (bundle != null) {
+
+      case Contents.Type.LOCATION:
+        Bundle locationBundle = intent.getBundleExtra(Intents.Encode.DATA);
+        if (locationBundle != null) {
           // These must use Bundle.getFloat(), not getDouble(), it's part of the API.
-          float latitude = bundle.getFloat("LAT", Float.MAX_VALUE);
-          float longitude = bundle.getFloat("LONG", Float.MAX_VALUE);
+          float latitude = locationBundle.getFloat("LAT", Float.MAX_VALUE);
+          float longitude = locationBundle.getFloat("LONG", Float.MAX_VALUE);
           if (latitude != Float.MAX_VALUE && longitude != Float.MAX_VALUE) {
             contents = "geo:" + latitude + ',' + longitude;
             displayContents = latitude + "," + longitude;
@@ -299,12 +296,11 @@ final class QRCodeEncoder {
           }
         }
         break;
-      }
     }
   }
 
   private static List<String> getAllBundleValues(Bundle bundle, String[] keys) {
-    List<String> values = new ArrayList<String>(keys.length);
+    List<String> values = new ArrayList<>(keys.length);
     for (String key : keys) {
       Object value = bundle.get(key);
       values.add(value == null ? null : value.toString());

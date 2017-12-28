@@ -30,6 +30,11 @@ import android.preference.Preference;
 import android.preference.PreferenceFragment;
 import android.preference.PreferenceScreen;
 
+/**
+ * Implements support for barcode scanning preferences.
+ *
+ * @see PreferencesActivity
+ */
 public final class PreferencesFragment 
     extends PreferenceFragment 
     implements SharedPreferences.OnSharedPreferenceChangeListener {
@@ -107,6 +112,12 @@ public final class PreferencesFragment
       if (valueString.isEmpty()) {
         return true;
       }
+      // Before validating, remove custom placeholders, which will not
+      // be considered valid parts of the URL in some locations:
+      // Blank %t and %s:
+      valueString = valueString.replaceAll("%[st]", "");
+      // Blank %f but not if followed by digit or a-f as it may be a hex sequence
+      valueString = valueString.replaceAll("%f(?![0-9a-f])", "");
       // Require a scheme otherwise:
       try {
         URI uri = new URI(valueString);

@@ -62,6 +62,11 @@ public final class URIResultHandler extends ResultHandler {
   }
 
   @Override
+  public Integer getDefaultButtonID() {
+    return 0;
+  }
+
+  @Override
   public void handleButtonPress(int index) {
     URIParsedResult uriResult = (URIParsedResult) getResult();
     String uri = uriResult.getURI();
@@ -76,6 +81,7 @@ public final class URIResultHandler extends ResultHandler {
         shareBySMS(uri);
         break;
       case 3:
+        searchBookContents(uri);
         break;
     }
   }

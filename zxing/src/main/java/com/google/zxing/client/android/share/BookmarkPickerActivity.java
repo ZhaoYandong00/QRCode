@@ -16,14 +16,17 @@
 
 package com.google.zxing.client.android.share;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import android.app.ListActivity;
 import android.content.Intent;
 import android.database.Cursor;
-import android.os.Bundle;
-import android.provider.Browser;
+import android.net.Uri;
 import android.util.Log;
 import android.view.View;
 import android.widget.ListView;
+import com.google.zxing.client.android.Intents;
 
 /**
  * This class is only needed because I can't successfully send an ACTION_PICK intent to
@@ -36,50 +39,43 @@ public final class BookmarkPickerActivity extends ListActivity {
   private static final String TAG = BookmarkPickerActivity.class.getSimpleName();
 
   private static final String[] BOOKMARK_PROJECTION = {
-      Browser.BookmarkColumns.TITLE,
-      Browser.BookmarkColumns.URL
+      "title", // Browser.BookmarkColumns.TITLE
+      "url", // Browser.BookmarkColumns.URL
   };
+  // Copied from android.provider.Browser.BOOKMARKS_URI:
+  private static final Uri BOOKMARKS_URI = Uri.parse("content://browser/bookmarks");
 
-  static final int TITLE_COLUMN = 0;
-  static final int URL_COLUMN = 1;
+  private static final String BOOKMARK_SELECTION = "bookmark = 1 AND url IS NOT NULL";
 
-  private static final String BOOKMARK_SELECTION = 
-      Browser.BookmarkColumns.BOOKMARK + " = 1 AND " + Browser.BookmarkColumns.URL + " IS NOT NULL";
-
-  private Cursor cursor;
+  private final List<String[]> titleURLs = new ArrayList<>();
 
   @Override
-  protected void onCreate(Bundle icicle) {
-    super.onCreate(icicle);
-    cursor = getContentResolver().query(Browser.BOOKMARKS_URI, BOOKMARK_PROJECTION,
-        BOOKMARK_SELECTION, null, null);
-    if (cursor == null) {
-      Log.w(TAG, "No cursor returned for bookmark query");
-      finish();
-      return;
+  protected void onResume() {
+    super.onResume();
+    titleURLs.clear();
+    try (Cursor cursor = getContentResolver().query(BOOKMARKS_URI, BOOKMARK_PROJECTION,
+             BOOKMARK_SELECTION, null, null)) {
+      if (cursor == null) {
+        Log.w(TAG, "No cursor returned for bookmark query");
+        finish();
+        return;
+      }
+      while (cursor.moveToNext()) {
+        titleURLs.add(new String[] { cursor.getString(0), cursor.getString(1) });
+      }
     }
-    setListAdapter(new BookmarkAdapter(this, cursor));
+    setListAdapter(new BookmarkAdapter(this, titleURLs));
   }
-  
-  @Override
-  protected void onDestroy() {
-    if (cursor != null) {
-      cursor.close();
-    }
-    super.onDestroy();
-  }
+
 
   @Override
   protected void onListItemClick(ListView l, View view, int position, long id) {
-    if (!cursor.isClosed() && cursor.moveToPosition(position)) {
-      Intent intent = new Intent();
-      intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET);
-      intent.putExtra(Browser.BookmarkColumns.TITLE, cursor.getString(TITLE_COLUMN));
-      intent.putExtra(Browser.BookmarkColumns.URL, cursor.getString(URL_COLUMN));
-      setResult(RESULT_OK, intent);
-    } else {
-      setResult(RESULT_CANCELED);
-    }
+    String[] titleURL = titleURLs.get(position);
+    Intent intent = new Intent();
+    intent.addFlags(Intents.FLAG_NEW_DOC);
+    intent.putExtra("title", titleURL[0]); // Browser.BookmarkColumns.TITLE
+    intent.putExtra("url", titleURL[1]); // Browser.BookmarkColumns.URL
+    setResult(RESULT_OK, intent);
     finish();
   }
 }

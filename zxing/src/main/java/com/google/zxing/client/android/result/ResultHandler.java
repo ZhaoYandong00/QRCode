@@ -16,6 +16,7 @@
 
 package com.google.zxing.client.android.result;
 
+import android.telephony.PhoneNumberUtils;
 import com.google.zxing.Result;
 import com.google.zxing.client.android.Contents;
 import com.google.zxing.client.android.Intents;
@@ -30,6 +31,7 @@ import com.google.zxing.client.result.ResultParser;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
@@ -40,6 +42,7 @@ import android.util.Log;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.util.Locale;
+import java.util.ArrayList;
 
 /**
  * A base class for the Android-specific barcode handlers. These allow the app to polymorphically
@@ -123,6 +126,9 @@ public abstract class ResultHandler {
    */
   public abstract int getButtonText(int index);
 
+  public Integer getDefaultButtonID() {
+    return null;
+  }
 
   /**
    * Execute the action which corresponds to the nth button.
@@ -195,7 +201,7 @@ public abstract class ResultHandler {
     // Only use the first name in the array, if present.
     Intent intent = new Intent(Intent.ACTION_INSERT_OR_EDIT, ContactsContract.Contacts.CONTENT_URI);
     intent.setType(ContactsContract.Contacts.CONTENT_ITEM_TYPE);
-    putExtra(intent, ContactsContract.Intents.Insert.NAME, names != null ? names[0] : null);
+    putExtra(intent, ContactsContract.Intents.Insert.NAME, names != null && names.length > 0 ? names[0] : null);
 
     putExtra(intent, ContactsContract.Intents.Insert.PHONETIC_NAME, pronunciation);
 
@@ -221,28 +227,50 @@ public abstract class ResultHandler {
       }
     }
 
-    // No field for URL, birthday; use notes
-    StringBuilder aggregatedNotes = new StringBuilder();
+    ArrayList<ContentValues> data = new ArrayList<>();
     if (urls != null) {
       for (String url : urls) {
         if (url != null && !url.isEmpty()) {
-          aggregatedNotes.append('\n').append(url);
+          ContentValues row = new ContentValues(2);
+          row.put(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Website.CONTENT_ITEM_TYPE);
+          row.put(ContactsContract.CommonDataKinds.Website.URL, url);
+          data.add(row);
+          break;
         }
       }
     }
-    for (String aNote : new String[] { birthday, note }) {
-      if (aNote != null) {
-        aggregatedNotes.append('\n').append(aNote);
-      }
+
+    if (birthday != null) {
+      ContentValues row = new ContentValues(3);
+      row.put(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Event.CONTENT_ITEM_TYPE);
+      row.put(ContactsContract.CommonDataKinds.Event.TYPE, ContactsContract.CommonDataKinds.Event.TYPE_BIRTHDAY);
+      row.put(ContactsContract.CommonDataKinds.Event.START_DATE, birthday);
+      data.add(row);
     }
+
     if (nicknames != null) {
       for (String nickname : nicknames) {
         if (nickname != null && !nickname.isEmpty()) {
-          aggregatedNotes.append('\n').append(nickname);
+          ContentValues row = new ContentValues(3);
+          row.put(ContactsContract.Data.MIMETYPE, ContactsContract.CommonDataKinds.Nickname.CONTENT_ITEM_TYPE);
+          row.put(ContactsContract.CommonDataKinds.Nickname.TYPE,
+                  ContactsContract.CommonDataKinds.Nickname.TYPE_DEFAULT);
+          row.put(ContactsContract.CommonDataKinds.Nickname.NAME, nickname);
+          data.add(row);
+          break;
         }
       }
     }
-    if (geo != null) {
+
+    if (!data.isEmpty()) {
+      intent.putParcelableArrayListExtra(ContactsContract.Intents.Insert.DATA, data);
+    }
+
+    StringBuilder aggregatedNotes = new StringBuilder();
+    if (note != null) {
+      aggregatedNotes.append('\n').append(note);
+    }
+    if (geo != null && geo.length >= 2) {
       aggregatedNotes.append('\n').append(geo[0]).append(',').append(geo[1]);
     }
 
@@ -290,18 +318,23 @@ public abstract class ResultHandler {
   }
 
   final void shareByEmail(String contents) {
-    sendEmailFromUri("mailto:", null, null, contents);
+    sendEmail(null, null, null, null, contents);
   }
 
-  final void sendEmail(String address, String subject, String body) {
-    sendEmailFromUri("mailto:" + address, address, subject, body);
-  }
-
-  // Use public Intent fields rather than private GMail app fields to specify subject and body.
-  final void sendEmailFromUri(String uri, String email, String subject, String body) {
-    Intent intent = new Intent(Intent.ACTION_SEND, Uri.parse(uri));
-    if (email != null) {
-      intent.putExtra(Intent.EXTRA_EMAIL, new String[] {email});
+  final void sendEmail(String[] to,
+                       String[] cc,
+                       String[] bcc,
+                       String subject,
+                       String body) {
+    Intent intent = new Intent(Intent.ACTION_SEND, Uri.parse("mailto:"));
+    if (to != null && to.length != 0) {
+      intent.putExtra(Intent.EXTRA_EMAIL, to);
+    }
+    if (cc != null && cc.length != 0) {
+      intent.putExtra(Intent.EXTRA_CC, cc);
+    }
+    if (bcc != null && bcc.length != 0) {
+      intent.putExtra(Intent.EXTRA_BCC, bcc);
     }
     putExtra(intent, Intent.EXTRA_SUBJECT, subject);
     putExtra(intent, Intent.EXTRA_TEXT, body);
@@ -317,7 +350,7 @@ public abstract class ResultHandler {
     sendSMSFromUri("smsto:" + phoneNumber, body);
   }
 
-  final void sendSMSFromUri(String uri, String body) {
+  private void sendSMSFromUri(String uri, String body) {
     Intent intent = new Intent(Intent.ACTION_SENDTO, Uri.parse(uri));
     putExtra(intent, "sms_body", body);
     // Exit the app once the SMS is sent
@@ -329,7 +362,7 @@ public abstract class ResultHandler {
     sendMMSFromUri("mmsto:" + phoneNumber, subject, body);
   }
 
-  final void sendMMSFromUri(String uri, String subject, String body) {
+  private void sendMMSFromUri(String uri, String subject, String body) {
     Intent intent = new Intent(Intent.ACTION_SENDTO, Uri.parse(uri));
     // The Messaging app needs to see a valid subject or else it will treat this an an SMS.
     if (subject == null || subject.isEmpty()) {
@@ -414,11 +447,11 @@ public abstract class ResultHandler {
    * Like {@link #launchIntent(Intent)} but will tell you if it is not handle-able
    * via {@link ActivityNotFoundException}.
    *
-   * @throws ActivityNotFoundException
+   * @throws ActivityNotFoundException if Intent can't be handled
    */
   final void rawLaunchIntent(Intent intent) {
     if (intent != null) {
-      intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_WHEN_TASK_RESET);
+      intent.addFlags(Intents.FLAG_NEW_DOC);
       Log.d(TAG, "Launching intent: " + intent + " with extras: " + intent.getExtras());
       activity.startActivity(intent);
     }
@@ -464,15 +497,23 @@ public abstract class ResultHandler {
     } catch (UnsupportedEncodingException e) {
       // can't happen; UTF-8 is always supported. Continue, I guess, without encoding      
     }
-    String url = customProductSearch.replace("%s", text);
+    String url = customProductSearch;
     if (rawResult != null) {
-      url = url.replace("%f", rawResult.getBarcodeFormat().toString());
+      // Replace %f but only if it doesn't seem to be a hex escape sequence. This remains
+      // problematic but avoids the more surprising problem of breaking escapes
+      url = url.replaceFirst("%f(?![0-9a-f])", rawResult.getBarcodeFormat().toString());
       if (url.contains("%t")) {
         ParsedResult parsedResultAgain = ResultParser.parseResult(rawResult);
         url = url.replace("%t", parsedResultAgain.getType().toString());
       }
     }
-    return url;
+    // Replace %s last as it might contain itself %f or %t
+    return url.replace("%s", text);
+  }
+
+  static String formatPhone(String phoneData) {
+    // Just collect the call to a deprecated method in one place
+    return PhoneNumberUtils.formatNumber(phoneData);
   }
 
 }

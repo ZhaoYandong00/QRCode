@@ -74,6 +74,7 @@ public final class LocaleManager {
     GOOGLE_COUNTRY_TLD.put("CH", "ch"); // SWITZERLAND    
     GOOGLE_COUNTRY_TLD.put(Locale.TAIWAN.getCountry(), "tw");
     GOOGLE_COUNTRY_TLD.put("TR", "com.tr"); // TURKEY
+    GOOGLE_COUNTRY_TLD.put("UA", "com.ua"); // UKRAINE
     GOOGLE_COUNTRY_TLD.put(Locale.UK.getCountry(), "co.uk");
     GOOGLE_COUNTRY_TLD.put(Locale.US.getCountry(), "com");
   }
@@ -104,11 +105,12 @@ public final class LocaleManager {
   private static final Map<String,String> GOOGLE_BOOK_SEARCH_COUNTRY_TLD = GOOGLE_COUNTRY_TLD;
 
   private static final Collection<String> TRANSLATED_HELP_ASSET_LANGUAGES =
-      Arrays.asList("de", "en", "es", "fr", "it", "ja", "ko", "nl", "pt", "ru", "zh-rCN", "zh-rTW", "zh-rHK");
+      Arrays.asList("de", "en", "es", "fa", "fr", "it", "ja", "ko", "nl", "pt", "ru", "uk", "zh-rCN", "zh");
 
   private LocaleManager() {}
 
   /**
+   * @param context application's {@link Context}
    * @return country-specific TLD suffix appropriate for the current default locale
    *  (e.g. "co.uk" for the United Kingdom)
    */
@@ -118,6 +120,8 @@ public final class LocaleManager {
 
   /**
    * The same as above, but specifically for Google Product Search.
+   *
+   * @param context application's {@link Context}
    * @return The top-level domain to use.
    */
   public static String getProductSearchCountryTLD(Context context) {
@@ -126,6 +130,8 @@ public final class LocaleManager {
 
   /**
    * The same as above, but specifically for Google Book Search.
+   *
+   * @param context application's {@link Context}
    * @return The top-level domain to use.
    */
   public static String getBookSearchCountryTLD(Context context) {
@@ -152,15 +158,14 @@ public final class LocaleManager {
     if (locale == null) {
       return DEFAULT_LANGUAGE;
     }
-    String language = locale.getLanguage();
     // Special case Chinese
-    if (Locale.SIMPLIFIED_CHINESE.getLanguage().equals(language)) {
-      return language + "-r" + getSystemCountry();
+    if (Locale.SIMPLIFIED_CHINESE.equals(locale)) {
+      return "zh-rCN";
     }
-    return language;
+    return locale.getLanguage();
   }
 
-  public static String getTranslatedAssetLanguage() {
+  static String getTranslatedAssetLanguage() {
     String language = getSystemLanguage();
     return TRANSLATED_HELP_ASSET_LANGUAGES.contains(language) ? language : DEFAULT_LANGUAGE;
   }
@@ -170,7 +175,7 @@ public final class LocaleManager {
     return tld == null ? DEFAULT_TLD : tld;
   }
 
-  public static String getCountry(Context context) {
+  private static String getCountry(Context context) {
     SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
     String countryOverride = prefs.getString(PreferencesActivity.KEY_SEARCH_COUNTRY, "-");
     if (countryOverride != null && !countryOverride.isEmpty() && !"-".equals(countryOverride)) {

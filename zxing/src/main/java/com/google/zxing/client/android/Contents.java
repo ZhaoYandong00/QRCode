@@ -28,6 +28,9 @@ public final class Contents {
   private Contents() {
   }
 
+  /**
+   * Contains type constants used when sending Intents.
+   */
   public static final class Type {
     /**
      * Plain text. Use Intent.putExtra(DATA, string). This can be used for URLs too, but string
@@ -52,9 +55,9 @@ public final class Contents {
 
     /**
      * A contact. Send a request to encode it as follows:
-     * <p/>
+     * {@code
      * import android.provider.Contacts;
-     * <p/>
+     *
      * Intent intent = new Intent(Intents.Encode.ACTION);
      * intent.putExtra(Intents.Encode.TYPE, CONTACT);
      * Bundle bundle = new Bundle();
@@ -63,6 +66,7 @@ public final class Contents {
      * bundle.putString(ContactsContract.Intents.Insert.EMAIL, "jenny@the80s.com");
      * bundle.putString(ContactsContract.Intents.Insert.POSTAL, "123 Fake St. San Francisco, CA 94102");
      * intent.putExtra(Intents.Encode.DATA, bundle);
+     * }
      */
     public static final String CONTACT = "CONTACT_TYPE";
 
